@@ -1,0 +1,169 @@
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
+
+# Set visual aesthetic style
+sns.set_theme(style="whitegrid")
+plt.rcParams["font.sans-serif"] = "Arial"
+
+
+# 1. GENERATE / LOAD DATASET
+def generate_data(n_orders=1000, seed=42):
+    np.random.seed(seed)
+    data = {
+        "order_id": np.arange(1000, 1000 + n_orders),
+        "promised_hours": np.random.choice([24, 48, 72], size=n_orders),
+        "actual_hours": np.round(
+            np.random.normal(loc=30, scale=10, size=n_orders).clip(12, 100), 1
+        ),
+        "items_ordered": np.random.randint(1, 10, size=n_orders),
+        "items_fulfilled": np.random.randint(1, 10, size=n_orders),
+        "freight_cost_inr": np.round(
+            np.random.uniform(150, 1200, size=n_orders), 2
+        ),
+        "distance_km": np.round(np.random.uniform(10, 300, size=n_orders), 1),
+        "payload_tons": np.round(
+            np.random.uniform(0.1, 2.5, size=n_orders), 2
+        ),
+    }
+    df = pd.DataFrame(data)
+    df["items_fulfilled"] = np.minimum(
+        df["items_ordered"], df["items_fulfilled"]
+    )
+    return df
+
+
+df = generate_data()
+
+# 2. FEATURE ENGINEERING & METRIC CALCULATION
+# Delay metric
+df["delay_hours"] = df["actual_hours"] - df["promised_hours"]
+df["is_late"] = df["delay_hours"] > 0
+
+# Order Fill Rate metric
+df["fill_rate"] = df["items_fulfilled"] / df["items_ordered"]
+df["is_in_full"] = df["items_fulfilled"] == df["items_ordered"]
+
+# On-Time In-Full (OTIF) composite flag
+df["is_otif"] = (~df["is_late"]) & (df["is_in_full"])
+
+# Operational efficiency: Cost per Ton-Kilometer (CPTK)
+df["cost_per_ton_km"] = df["freight_cost_inr"] / (
+    df["distance_km"] * df["payload_tons"]
+)
+
+# 3. EXECUTIVE KPI SUMMARY
+print("=" * 50)
+print("             EXECUTIVE LOGISTICS KPI SUMMARY          ")
+print("=" * 50)
+print(f"Total Orders Analyzed   : {len(df):,}")
+print(f"On-Time Delivery Rate   : {(~df['is_late']).mean() * 100:.2f}%")
+print(f"In-Full Fulfillment Rate: {df['is_in_full'].mean() * 100:.2f}%")
+print(f"Overall OTIF Rate       : {df['is_otif'].mean() * 100:.2f}%")
+print(f"Average Order Fill Rate : {df['fill_rate'].mean() * 100:.2f}%")
+print(f"Average Freight Cost    : ₹{df['freight_cost_inr'].mean():.2f}")
+print(f"Mean Cost per Ton-KM    : ₹{df['cost_per_ton_km'].mean():.2f}")
+print("=" * 50 + "\n")
+
+# 4. DESCRIPTIVE STATISTICS
+print("--- SUMMARY STATISTICS ---")
+print(
+    df[
+        [
+            "actual_hours",
+            "delay_hours",
+            "fill_rate",
+            "freight_cost_inr",
+            "cost_per_ton_km",
+        ]
+    ].describe()
+)
+
+
+# 5. VISUALIZATION DASHBOARD
+fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+fig.suptitle(
+    "Week 1 Logistics Exploratory Data Analysis Dashboard",
+    fontsize=16,
+    fontweight="bold",
+)
+
+# Plot 1: Delivery Delay Distribution
+sns.histplot(
+    df["delay_hours"],
+    kde=True,
+    ax=axes[0, 0],
+    color="#1F4E78",
+    bins=30,
+)
+axes[0, 0].axvline(0, color="red", linestyle="--", linewidth=2, label="SLA Limit")
+axes[0, 0].set_title("Delivery Delay Distribution (Actual vs. Promised)")
+axes[0, 0].set_xlabel("Delay Hours (Negative = Early, Positive = Late)")
+axes[0, 0].set_ylabel("Order Count")
+axes[0, 0].legend()
+
+# Plot 2: OTIF Breakdown by Promised SLA Category
+otif_by_sla = (
+    df.groupby("promised_hours")["is_otif"].mean().reset_index()
+)
+otif_by_sla["is_otif_pct"] = otif_by_sla["is_otif"] * 100
+
+sns.barplot(
+    data=otif_by_sla,
+    x="promised_hours",
+    y="is_otif_pct",
+    ax=axes[0, 1],
+    palette="Blues_d",
+)
+axes[0, 1].set_title("OTIF Compliance Rate by Service SLA Window")
+axes[0, 1].set_xlabel("Promised Delivery Window (Hours)")
+axes[0, 1].set_ylabel("OTIF Success Rate (%)")
+axes[0, 1].set_ylim(0, 100)
+for p in axes[0, 1].patches:
+    axes[0, 1].annotate(
+        f"{p.get_height():.1f}%",
+        (p.get_x() + p.get_width() / 2.0, p.get_height() - 8),
+        ha="center",
+        va="center",
+        color="white",
+        fontweight="bold",
+    )
+
+# Plot 3: Freight Cost vs. Distance Traveled
+sns.scatterplot(
+    data=df,
+    x="distance_km",
+    y="freight_cost_inr",
+    hue="is_late",
+    palette={False: "#2E75B6", True: "#C00000"},
+    alpha=0.7,
+    ax=axes[1, 0],
+)
+axes[1, 0].set_title("Freight Cost vs. Distance Traveled")
+axes[1, 0].set_xlabel("Distance (km)")
+axes[1, 0].set_ylabel("Freight Cost (₹)")
+
+# Plot 4: Correlation Heatmap
+corr_cols = [
+    "promised_hours",
+    "actual_hours",
+    "items_ordered",
+    "fill_rate",
+    "freight_cost_inr",
+    "distance_km",
+    "payload_tons",
+    "cost_per_ton_km",
+]
+sns.heatmap(
+    df[corr_cols].corr(),
+    annot=True,
+    fmt=".2f",
+    cmap="Blues",
+    ax=axes[1, 1],
+    cbar=False,
+)
+axes[1, 1].set_title("Feature Correlation Matrix")
+
+plt.tight_layout(rect=[0, 0, 1, 0.96])
+plt.show()
