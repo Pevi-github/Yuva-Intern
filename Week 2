@@ -1,0 +1,97 @@
+import numpy as np
+import pandas as pd
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
+
+# 1. SIMULATE RAW DIRTY LOGISTICS DATASET
+np.random.seed(42)
+n_records = 1000
+
+df_raw = pd.DataFrame({
+    "order_id": np.random.choice(
+        np.arange(1000, 1950), size=n_records
+    ),  # Contains duplicates
+    "promised_hours": np.random.choice(
+        [24, 48, 72, np.nan], size=n_records, p=[0.3, 0.4, 0.25, 0.05]
+    ),
+    "actual_hours": np.random.normal(loc=32, scale=12, size=n_records),
+    "items_ordered": np.random.choice(
+        [1, 2, 5, 8, np.nan, -3], size=n_records
+    ),
+    "items_fulfilled": np.random.randint(1, 10, size=n_records),
+    "freight_cost_inr": np.random.uniform(150, 1500, size=n_records),
+    "distance_km": np.random.uniform(10, 350, size=n_records),
+})
+
+# Inject extreme outliers & nulls
+df_raw.loc[::20, "actual_hours"] = np.nan
+df_raw.loc[::25, "freight_cost_inr"] = np.nan
+df_raw.loc[10:15, "actual_hours"] = [
+    250,
+    310,
+    180,
+    290,
+    400,
+    350,
+]  # Extreme GPS anomalies
+
+print("--- RAW DATA DEFECTS DETECTED ---")
+print("Duplicate Rows:", df_raw.duplicated(subset=["order_id"]).sum())
+print("Missing Values:\n", df_raw.isnull().sum())
+
+# 2. STEP 1: DEDUPLICATION & INVALID DATA REMOVAL
+df_clean = df_raw.drop_duplicates(subset=["order_id"], keep="first").copy()
+df_clean = df_clean[
+    df_clean["items_ordered"] > 0
+]  # Remove invalid negative orders
+
+# 3. STEP 2: IMPUTATION OF MISSING VALUES
+df_clean["promised_hours"] = df_clean["promised_hours"].fillna(
+    df_clean["promised_hours"].mode()[0]
+)
+df_clean["items_ordered"] = df_clean["items_ordered"].fillna(
+    df_clean["items_ordered"].median()
+)
+df_clean["actual_hours"] = df_clean["actual_hours"].fillna(
+    df_clean["actual_hours"].median()
+)
+df_clean["freight_cost_inr"] = df_clean["freight_cost_inr"].fillna(
+    df_clean["freight_cost_inr"].median()
+)
+
+# Enforcement of Business Rule
+df_clean["items_fulfilled"] = np.minimum(
+    df_clean["items_ordered"], df_clean["items_fulfilled"]
+)
+
+# 4. STEP 3: OUTLIER REMEDIATION VIA IQR WINSORIZATION (CAPPING)
+Q1 = df_clean["actual_hours"].quantile(0.25)
+Q3 = df_clean["actual_hours"].quantile(0.75)
+IQR = Q3 - Q1
+upper_bound = Q3 + 1.5 * IQR
+lower_bound = Q1 - 1.5 * IQR
+
+df_clean["actual_hours_capped"] = np.where(
+    df_clean["actual_hours"] > upper_bound,
+    upper_bound,
+    np.where(
+        df_clean["actual_hours"] < lower_bound,
+        lower_bound,
+        df_clean["actual_hours"],
+    ),
+)
+
+# 5. STEP 4: FEATURE SCALING & NORMALIZATION
+scaler_std = StandardScaler()
+scaler_minmax = MinMaxScaler()
+
+df_clean["distance_km_zscore"] = scaler_std.fit_transform(
+    df_clean[["distance_km"]]
+)
+df_clean["freight_cost_minmax"] = scaler_minmax.fit_transform(
+    df_clean[["freight_cost_inr"]]
+)
+
+print("\n--- PREPROCESSING COMPLETE ---")
+print("Cleaned Dataset Shape:", df_clean.shape)
+print("Remaining Missing Values:", df_clean.isnull().sum().sum())
+
