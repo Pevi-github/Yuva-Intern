@@ -1,0 +1,85 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Set visual aesthetic style
+sns.set_theme(style="whitegrid", palette="muted")
+np.random.seed(42)
+
+# 1. Simulate Logistics Exploratory Dataset (n=1000)
+n = 1000
+df = pd.DataFrame({
+    'distance_km': np.random.uniform(15, 350, n),
+    'shipment_volume_units': np.random.randint(10, 500, n),
+    'fulfillment_hub': np.random.choice(
+        ['Chennai', 'Coimbatore', 'Salem', 'Madurai'], 
+        size=n, 
+        p=[0.4, 0.25, 0.2, 0.15]
+    ),
+    'transport_mode': np.random.choice(
+        ['Express Air', 'Heavy Truck', 'Regional Van'], 
+        size=n, 
+        p=[0.2, 0.5, 0.3]
+    )
+})
+
+# Feature derivation with realistic mathematical relationships
+df['freight_cost_inr'] = (
+    120 
+    + (df['distance_km'] * 3.2) 
+    + (df['shipment_volume_units'] * 0.85) 
+    + np.random.normal(0, 45, n)
+)
+
+df['delivery_time_hrs'] = (
+    8 
+    + (df['distance_km'] * 0.09) 
+    + np.random.exponential(scale=5, size=n)
+)
+
+# 2. Print Central Tendency Metrics
+print("=== CENTRAL TENDENCY METRICS ===")
+metrics = df[['delivery_time_hrs', 'freight_cost_inr', 'distance_km']].describe().T[['mean', '50%', 'std']]
+metrics.rename(columns={'50%': 'median'}, inplace=True)
+print(metrics)
+
+# 3. Multi-Plot EDA Visualization Suite
+fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+# Subplot 1: Distribution of Delivery Times
+sns.histplot(df['delivery_time_hrs'], kde=True, ax=axes[0, 0], color='#1F4E78')
+axes[0, 0].set_title('Distribution of Delivery Times (Hours)', fontsize=12, fontweight='bold')
+axes[0, 0].set_xlabel('Delivery Time (hrs)')
+axes[0, 0].set_ylabel('Order Count')
+
+# Subplot 2: Distance vs. Freight Cost Correlation
+sns.scatterplot(
+    data=df, x='distance_km', y='freight_cost_inr', 
+    hue='transport_mode', ax=axes[0, 1], alpha=0.7
+)
+sns.regplot(
+    data=df, x='distance_km', y='freight_cost_inr', 
+    scatter=False, ax=axes[0, 1], color='red'
+)
+axes[0, 1].set_title('Transportation Distance vs. Freight Cost', fontsize=12, fontweight='bold')
+axes[0, 1].set_xlabel('Distance (km)')
+axes[0, 1].set_ylabel('Freight Cost (INR)')
+
+# Subplot 3: Delivery Times by Fulfillment Hub
+sns.boxplot(
+    data=df, x='fulfillment_hub', y='delivery_time_hrs', 
+    ax=axes[1, 0], palette='Blues_r'
+)
+axes[1, 0].set_title('Delivery Time Variance Across Fulfillment Hubs', fontsize=12, fontweight='bold')
+axes[1, 0].set_xlabel('Fulfillment Hub')
+axes[1, 0].set_ylabel('Delivery Time (hrs)')
+
+# Subplot 4: Feature Correlation Matrix Heatmap
+numeric_df = df[['distance_km', 'shipment_volume_units', 'freight_cost_inr', 'delivery_time_hrs']]
+sns.heatmap(numeric_df.corr(), annot=True, cmap='Blues', fmt=".2f", ax=axes[1, 1])
+axes[1, 1].set_title('Logistics Metrics Correlation Matrix', fontsize=12, fontweight='bold')
+
+plt.tight_layout()
+plt.savefig('logistics_eda_visualizations.png', dpi=300)
+plt.show()
